@@ -1,0 +1,109 @@
+---
+- name: Cleanup previous deployment
+  hosts: tradeoffer_vagrant
+  become: true
+  tasks:
+    - name: Stop and remove containers
+      community.docker.docker_compose_v2:
+        project_src: /srv/tradeoffer
+        state: absent
+        remove_volumes: true
+      ignore_errors: true
+
+    - name: Remove application directory
+      ansible.builtin.file:
+        path: /srv/tradeoffer
+        state: absent
+      ignore_errors: true
+
+- name: Installing tradeoffer
+  hosts: tradeoffer_vagrant
+  become: true
+
+  pre_tasks:
+    - name: Install Docker
+      tags:
+        - docker
+      block:
+        - name: Adding Docker APT Registry
+          ansible.builtin.shell: 
+            cmd: |
+              # Add Docker's official GPG key:
+              sudo apt-get update
+              sudo apt-get -y install ca-certificates curl
+              sudo install -m 0755 -d /etc/apt/keyrings
+              sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+              sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+              # Add the repository to Apt sources:
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+              sudo apt-get update
+            creates: /etc/apt/keyrings/docker.asc
+
+        - name: Install Docker packages
+          ansible.builtin.apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-buildx-plugin
+              - docker-compose-plugin
+            state: present
+            update_cache: true
+
+        - name: Ensure Docker is running
+          ansible.builtin.systemd:
+            name: docker
+            state: started
+            enabled: true
+
+  tasks:
+    - name: TLS Setup
+      become: true
+      tags: 
+        - tls
+      block:
+      - name: Run nginx_tls role
+        ansible.builtin.import_role:
+          name: nginx_tls
+
+
+    - name: Nginx setup
+      become: true
+      tags: 
+        - ng
+      block:
+      - name: Run nginx role
+        ansible.builtin.import_role:
+          name: nginx
+
+    - name: Tradeoffer installing
+      tags:
+        - tradeoffer
+      block:
+        - name: Run Tradeoffer role
+          ansible.builtin.import_role:
+            name: tradeoffer
+
+        - name: Verify backend connectivity
+          ansible.builtin.uri:
+            url: "http://localhost:3001"
+            return_content: true
+            status_code: 200
+          register: backend_check
+          ignore_errors: true
+        
+        - name: Verify frontend connectivity  
+          ansible.builtin.uri:
+            url: "http://localhost:3002"
+            return_content: true
+            status_code: 200
+          register: frontend_check
+          ignore_errors: true
+
+        - name: Show service status
+          ansible.builtin.debug:
+            msg: |
+              Backend status: {{ backend_check.status }}
+              Frontend status: {{ frontend_check.status }}
+              Backend response: {{ backend_check.content }}

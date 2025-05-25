@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: MIT-0
+---
+
+- name: Generate root CA private key
+  community.crypto.openssl_privatekey:
+    path: /etc/ssl/private/rootCA.key
+    size: 2048
+    type: RSA
+
+- name: Copy root CA config
+  copy:
+    src: rootCA.conf
+    dest: /etc/ssl/rootCA.conf
+    
+- name: Generate root CA certificate (via openssl command)
+  command: >
+    openssl req -x509 -new -nodes
+    -key /etc/ssl/private/rootCA.key
+    -out /etc/ssl/certs/rootCA.pem
+    -days 3650
+    -sha256
+    -config /etc/ssl/rootCA.conf
+  args:
+    creates: /etc/ssl/certs/rootCA.pem
+
+
+- name: Copy config
+  copy:
+    src: task-service.local.conf
+    dest: /etc/ssl/task-service.local.conf
+    mode: '0644'
+
+
+- name: Generate CSR and key for task-service.local
+  command: >
+    openssl req -new -nodes
+    -keyout /etc/ssl/private/task-service.local.key
+    -out /etc/ssl/task-service.local.csr
+    -config /etc/ssl/task-service.local.conf
+  args:
+    creates: /etc/ssl/task-service.local.csr
+
+
+- name: Sign certificate with root CA
+  community.crypto.x509_certificate:
+    path: /etc/ssl/certs/task-service.local.crt
+    csr_path: /etc/ssl/task-service.local.csr
+    ownca_path: /etc/ssl/certs/rootCA.pem
+    ownca_privatekey_path: /etc/ssl/private/rootCA.key
+    provider: ownca
+    ownca_digest: sha256
+    ownca_not_after: "+365d"

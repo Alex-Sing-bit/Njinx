@@ -1,0 +1,50 @@
+
+#SPDX-License-Identifier: MIT-0
+---
+- name: Install nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+
+- name: Crate cert dir
+  file:
+    path: /etc/nginx/ssl
+    state: directory
+    mode: '0755'
+
+- name: Copy cert
+  copy:
+    src: /etc/ssl/certs/task-service.local.crt
+    dest: /etc/nginx/ssl/task-service.local.crt
+    remote_src: yes
+
+- name: Copy key
+  copy:
+    src: /etc/ssl/private/task-service.local.key
+    dest: /etc/nginx/ssl/task-service.local.key
+    remote_src: yes
+    mode: '0600'
+
+- name: Copy nginx config
+  copy:
+    src: files/nginx.conf
+    dest: /etc/nginx/sites-available/task-service.local
+    mode: '0644'
+
+- name: Seamlink sites-enabled
+  file:
+    src: /etc/nginx/sites-available/task-service.local
+    dest: /etc/nginx/sites-enabled/task-service.local
+    state: link
+    force: true
+
+- name: Remove default config
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Reload nginx if configuration is valid
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
